@@ -219,201 +219,165 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         """Initialize the user interface"""
         self.setWindowTitle("Screener - Remote Desktop")
-        self.setGeometry(100, 100, 600, 500)
+        self.setGeometry(100, 100, 1200, 700)
         
         # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
         # Main layout
-        layout = QVBoxLayout()
-        central_widget.setLayout(layout)
+        main_layout = QVBoxLayout()
+        central_widget.setLayout(main_layout)
         
         # Title
         title = QLabel("Screener")
-        title.setFont(QFont("Arial", 24, QFont.Bold))
+        title.setFont(QFont("Arial", 20, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        main_layout.addWidget(title)
         
-        subtitle = QLabel("Remote Desktop Sharing")
-        subtitle.setAlignment(Qt.AlignCenter)
-        layout.addWidget(subtitle)
+        # Main content area - horizontal split
+        content_layout = QHBoxLayout()
+        main_layout.addLayout(content_layout)
         
-        # Tab widget
-        tabs = QTabWidget()
-        layout.addWidget(tabs)
+        # Left side - Controls (30%)
+        left_panel = QWidget()
+        left_layout = QVBoxLayout()
+        left_panel.setLayout(left_layout)
+        left_panel.setMaximumWidth(400)
         
-        # Host tab
-        host_tab = self.create_host_tab()
-        tabs.addTab(host_tab, "Host (Share Screen)")
+        # Host section
+        host_group = QLabel("HOST SETTINGS")
+        host_group.setFont(QFont("Arial", 12, QFont.Bold))
+        left_layout.addWidget(host_group)
         
-        # Client tab
-        client_tab = self.create_client_tab()
-        tabs.addTab(client_tab, "Connect (View Remote)")
-        
-        # Status/Log area
-        layout.addWidget(QLabel("Status:"))
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(150)
-        layout.addWidget(self.log_text)
-        
-        self.log("Welcome to Screener!")
-        self.log(f"Your local IP: {self.get_local_ip()}")
-        
-    def create_host_tab(self):
-        """Create the host tab"""
-        widget = QWidget()
-        layout = QVBoxLayout()
-        widget.setLayout(layout)
-        
-        # Info
-        info = QLabel("Share your screen with others. They can view and control your desktop.")
-        info.setWordWrap(True)
-        layout.addWidget(info)
-        
-        # Settings
-        settings_layout = QHBoxLayout()
-        
-        settings_layout.addWidget(QLabel("Port:"))
+        # Server settings
+        server_settings = QHBoxLayout()
+        server_settings.addWidget(QLabel("Port:"))
         self.port_input = QLineEdit("5555")
-        self.port_input.setMaximumWidth(100)
-        settings_layout.addWidget(self.port_input)
-        
-        settings_layout.addWidget(QLabel("FPS:"))
+        self.port_input.setMaximumWidth(60)
+        server_settings.addWidget(self.port_input)
+        server_settings.addWidget(QLabel("FPS:"))
         self.fps_input = QLineEdit("30")
-        self.fps_input.setMaximumWidth(100)
-        settings_layout.addWidget(self.fps_input)
-        
-        settings_layout.addWidget(QLabel("Quality:"))
+        self.fps_input.setMaximumWidth(50)
+        server_settings.addWidget(self.fps_input)
+        server_settings.addWidget(QLabel("Quality:"))
         self.quality_input = QLineEdit("90")
-        self.quality_input.setMaximumWidth(100)
-        settings_layout.addWidget(self.quality_input)
-
-        settings_layout.addWidget(QLabel("Target KB:"))
+        self.quality_input.setMaximumWidth(50)
+        server_settings.addWidget(self.quality_input)
+        server_settings.addWidget(QLabel("KB:"))
         self.targetkb_input = QLineEdit("200")
-        self.targetkb_input.setMaximumWidth(100)
-        settings_layout.addWidget(self.targetkb_input)
-        
-        settings_layout.addStretch()
-        layout.addLayout(settings_layout)
+        self.targetkb_input.setMaximumWidth(50)
+        server_settings.addWidget(self.targetkb_input)
+        left_layout.addLayout(server_settings)
         
         # Connection info
         self.connection_info = QLabel("")
-        self.connection_info.setStyleSheet("background-color: #e0e0e0; padding: 10px; border-radius: 5px;")
-        layout.addWidget(self.connection_info)
+        self.connection_info.setStyleSheet("background-color: #e0e0e0; padding: 8px; border-radius: 5px;")
+        self.connection_info.setWordWrap(True)
+        left_layout.addWidget(self.connection_info)
         
-        # Buttons
-        button_layout = QHBoxLayout()
-        
+        # Server buttons
+        server_btn_layout = QHBoxLayout()
         self.start_server_btn = QPushButton("Start Hosting")
         self.start_server_btn.clicked.connect(self.start_server)
-        self.start_server_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px;")
-        button_layout.addWidget(self.start_server_btn)
+        self.start_server_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px;")
+        server_btn_layout.addWidget(self.start_server_btn)
         
         self.stop_server_btn = QPushButton("Stop Hosting")
         self.stop_server_btn.clicked.connect(self.stop_server)
         self.stop_server_btn.setEnabled(False)
-        self.stop_server_btn.setStyleSheet("background-color: #f44336; color: white; padding: 10px;")
-        button_layout.addWidget(self.stop_server_btn)
+        self.stop_server_btn.setStyleSheet("background-color: #f44336; color: white; padding: 8px;")
+        server_btn_layout.addWidget(self.stop_server_btn)
+        left_layout.addLayout(server_btn_layout)
         
-        layout.addLayout(button_layout)
-        layout.addStretch()
+        left_layout.addWidget(QLabel(""))  # Spacer
         
-        return widget
-    
-    def create_client_tab(self):
-        """Create the client tab"""
-        widget = QWidget()
-        layout = QVBoxLayout()
-        widget.setLayout(layout)
+        # Client section
+        client_group = QLabel("CLIENT SETTINGS")
+        client_group.setFont(QFont("Arial", 12, QFont.Bold))
+        left_layout.addWidget(client_group)
         
-        # Info
-        info = QLabel("Connect to a remote computer to view and control it.")
-        info.setWordWrap(True)
-        layout.addWidget(info)
-        
-        # Saved devices section
-        saved_layout = QHBoxLayout()
-        saved_layout.addWidget(QLabel("Saved Devices:"))
+        # Saved devices
+        left_layout.addWidget(QLabel("Saved Devices:"))
         self.saved_devices_combo = QComboBox()
-        self.saved_devices_combo.setMinimumWidth(200)
         self.saved_devices_combo.addItem("-- Select a saved device --")
         self.populate_saved_devices()
         self.saved_devices_combo.currentIndexChanged.connect(self.on_device_selected)
-        saved_layout.addWidget(self.saved_devices_combo)
+        left_layout.addWidget(self.saved_devices_combo)
         
-        save_device_btn = QPushButton("💾 Save Current")
-        save_device_btn.setMaximumWidth(120)
+        saved_btn_layout = QHBoxLayout()
+        save_device_btn = QPushButton("💾 Save")
         save_device_btn.clicked.connect(self.save_current_device)
         save_device_btn.setStyleSheet("padding: 5px;")
-        saved_layout.addWidget(save_device_btn)
+        saved_btn_layout.addWidget(save_device_btn)
         
         delete_device_btn = QPushButton("🗑️ Delete")
-        delete_device_btn.setMaximumWidth(80)
         delete_device_btn.clicked.connect(self.delete_saved_device)
         delete_device_btn.setStyleSheet("padding: 5px;")
-        saved_layout.addWidget(delete_device_btn)
-        
-        saved_layout.addStretch()
-        layout.addLayout(saved_layout)
+        saved_btn_layout.addWidget(delete_device_btn)
+        left_layout.addLayout(saved_btn_layout)
         
         # Connection settings
-        conn_layout = QHBoxLayout()
-        
-        conn_layout.addWidget(QLabel("Host IP:"))
+        left_layout.addWidget(QLabel("Host IP:"))
         self.host_input = QLineEdit("192.168.1.100")
-        conn_layout.addWidget(self.host_input)
+        left_layout.addWidget(self.host_input)
         
-        conn_layout.addWidget(QLabel("Port:"))
+        port_layout = QHBoxLayout()
+        port_layout.addWidget(QLabel("Port:"))
         self.client_port_input = QLineEdit("5555")
         self.client_port_input.setMaximumWidth(100)
-        conn_layout.addWidget(self.client_port_input)
+        port_layout.addWidget(self.client_port_input)
+        port_layout.addStretch()
+        left_layout.addLayout(port_layout)
         
-        layout.addLayout(conn_layout)
-        
-        # Viewer area
-        self.viewer_label = QLabel("No video yet")
-        self.viewer_label.setAlignment(Qt.AlignCenter)
-        self.viewer_label.setStyleSheet("background-color: #000; color: #ccc; padding: 8px;")
-        self.viewer_label.setMinimumHeight(360)
-        layout.addWidget(self.viewer_label)
-        
-        # Instructions
-        instructions = QLabel(
-            "Instructions:\n"
-            "• Press 'C' to toggle remote control ON/OFF\n"
-            "• Press 'Q' to quit the remote session\n"
-            "• When control is ON, your mouse and keyboard will control the remote computer"
-        )
-        instructions.setStyleSheet("background-color: #fff3cd; padding: 10px; border-radius: 5px;")
-        layout.addWidget(instructions)
-        
-        # Buttons
-        button_layout = QHBoxLayout()
-        
+        # Client buttons
+        client_btn_layout = QHBoxLayout()
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.clicked.connect(self.start_client)
-        self.connect_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 10px;")
-        button_layout.addWidget(self.connect_btn)
+        self.connect_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 8px;")
+        client_btn_layout.addWidget(self.connect_btn)
         
         self.disconnect_btn = QPushButton("Disconnect")
         self.disconnect_btn.clicked.connect(self.stop_client)
         self.disconnect_btn.setEnabled(False)
-        self.disconnect_btn.setStyleSheet("background-color: #f44336; color: white; padding: 10px;")
-        button_layout.addWidget(self.disconnect_btn)
-
-        # Large viewer button
+        self.disconnect_btn.setStyleSheet("background-color: #f44336; color: white; padding: 8px;")
+        client_btn_layout.addWidget(self.disconnect_btn)
+        left_layout.addLayout(client_btn_layout)
+        
         self.open_viewer_btn = QPushButton("Open Large Viewer")
         self.open_viewer_btn.clicked.connect(self.open_large_viewer)
         self.open_viewer_btn.setEnabled(False)
-        self.open_viewer_btn.setStyleSheet("padding: 10px;")
-        button_layout.addWidget(self.open_viewer_btn)
+        self.open_viewer_btn.setStyleSheet("padding: 8px;")
+        left_layout.addWidget(self.open_viewer_btn)
         
-        layout.addLayout(button_layout)
-        layout.addStretch()
+        left_layout.addStretch()
         
-        return widget
+        content_layout.addWidget(left_panel)
+        
+        # Right side - Video viewer (70%)
+        right_panel = QWidget()
+        right_layout = QVBoxLayout()
+        right_panel.setLayout(right_layout)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Viewer area - takes all available space
+        self.viewer_label = QLabel("Remote Screen\n\nConnect to view remote desktop")
+        self.viewer_label.setAlignment(Qt.AlignCenter)
+        self.viewer_label.setStyleSheet("background-color: #000; color: #ccc; font-size: 16px;")
+        self.viewer_label.setMinimumSize(600, 400)
+        right_layout.addWidget(self.viewer_label)
+        
+        content_layout.addWidget(right_panel, stretch=1)
+        
+        # Status/Log area at bottom
+        main_layout.addWidget(QLabel("Status:"))
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        self.log_text.setMaximumHeight(100)
+        main_layout.addWidget(self.log_text)
+        
+        self.log("Welcome to Screener!")
+        self.log(f"Your local IP: {self.get_local_ip()}")
     
     def get_local_ip(self):
         """Get the local IP address"""
