@@ -72,6 +72,9 @@ class ScreenShareClient:
                     except Exception as cb_e:
                         print(f"on_frame callback error: {cb_e}")
                     
+        except (ConnectionResetError, ConnectionAbortedError, OSError) as conn_err:
+            print(f"Connection lost while receiving data: {conn_err}")
+            self.running = False
         except Exception as e:
             print(f"Error handling server data: {e}")
             import traceback

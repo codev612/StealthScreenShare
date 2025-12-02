@@ -118,7 +118,13 @@ class ScreenShareServer:
                     'data': compressed,
                     'timestamp': time.time()
                 })
-                self.network.send_data(data)
+                
+                try:
+                    self.network.send_data(data)
+                except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as conn_err:
+                    print(f"Connection lost: {conn_err}")
+                    print("Client disconnected, stopping stream...")
+                    break
                 
                 frame_count += 1
                 
@@ -137,8 +143,13 @@ class ScreenShareServer:
                 if sleep_time > 0:
                     time.sleep(sleep_time)
                     
+            except KeyboardInterrupt:
+                print("\nStream interrupted by user")
+                break
             except Exception as e:
                 print(f"Error in streaming loop: {e}")
+                import traceback
+                traceback.print_exc()
                 break
         
         # Cleanup (let GC handle capturer; __del__ will close resources)

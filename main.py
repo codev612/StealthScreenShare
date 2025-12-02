@@ -84,6 +84,12 @@ class ClientThread(QThread):
             while self.client.running:
                 threading.Event().wait(0.05)
             
+            # Connection ended
+            if not self.client.running:
+                self.log_signal.emit("Connection closed by server")
+            
+        except (ConnectionResetError, ConnectionAbortedError, OSError) as conn_err:
+            self.log_signal.emit(f"Connection lost: {conn_err}")
         except Exception as e:
             self.log_signal.emit(f"Client error: {e}")
     
@@ -413,8 +419,7 @@ class ViewerWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Handle window close event"""
-        self.stop_server()
-        self.stop_client()
+        # Just close the viewer window, don't stop the server/client
         event.accept()
 
 

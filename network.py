@@ -65,12 +65,16 @@ class NetworkServer:
         if not self.client_socket:
             raise Exception("No client connected")
         
-        # Send data length first (4 bytes)
-        data_size = struct.pack("!I", len(data))
-        self.client_socket.sendall(data_size)
-        
-        # Send actual data
-        self.client_socket.sendall(data)
+        try:
+            # Send data length first (4 bytes)
+            data_size = struct.pack("!I", len(data))
+            self.client_socket.sendall(data_size)
+            
+            # Send actual data
+            self.client_socket.sendall(data)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
+            self.running = False
+            raise
     
     def receive_data(self):
         """
@@ -208,12 +212,16 @@ class NetworkClient:
         if not self.socket:
             raise Exception("Not connected")
         
-        # Send data length first (4 bytes)
-        data_size = struct.pack("!I", len(data))
-        self.socket.sendall(data_size)
-        
-        # Send actual data
-        self.socket.sendall(data)
+        try:
+            # Send data length first (4 bytes)
+            data_size = struct.pack("!I", len(data))
+            self.socket.sendall(data_size)
+            
+            # Send actual data
+            self.socket.sendall(data)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
+            self.running = False
+            raise
     
     def receive_data(self):
         """
