@@ -2,9 +2,12 @@
 Main entry point with GUI for ScreenHacker
 """
 import sys
+import json
+import os
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                               QHBoxLayout, QPushButton, QLabel, QLineEdit, 
-                              QTextEdit, QTabWidget, QMessageBox)
+                              QTextEdit, QTabWidget, QMessageBox, QComboBox, 
+                              QInputDialog)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QImage, QPixmap
 import socket
@@ -106,6 +109,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.server_thread = None
         self.client_thread = None
+        self.devices_file = os.path.join(os.path.dirname(__file__), 'saved_devices.json')
+        self.saved_devices = self.load_saved_devices()
         self.init_ui()
         
     def init_ui(self):
@@ -225,6 +230,31 @@ class MainWindow(QMainWindow):
         info.setWordWrap(True)
         layout.addWidget(info)
         
+        # Saved devices section
+        saved_layout = QHBoxLayout()
+        saved_layout.addWidget(QLabel("Saved Devices:"))
+        self.saved_devices_combo = QComboBox()
+        self.saved_devices_combo.setMinimumWidth(200)
+        self.saved_devices_combo.addItem("-- Select a saved device --")
+        self.populate_saved_devices()
+        self.saved_devices_combo.currentIndexChanged.connect(self.on_device_selected)
+        saved_layout.addWidget(self.saved_devices_combo)
+        
+        save_device_btn = QPushButton("💾 Save Current")
+        save_device_btn.setMaximumWidth(120)
+        save_device_btn.clicked.connect(self.save_current_device)
+        save_device_btn.setStyleSheet("padding: 5px;")
+        saved_layout.addWidget(save_device_btn)
+        
+        delete_device_btn = QPushButton("🗑️ Delete")
+        delete_device_btn.setMaximumWidth(80)
+        delete_device_btn.clicked.connect(self.delete_saved_device)
+        delete_device_btn.setStyleSheet("padding: 5px;")
+        saved_layout.addWidget(delete_device_btn)
+        
+        saved_layout.addStretch()
+        layout.addLayout(saved_layout)
+        
         # Connection settings
         conn_layout = QHBoxLayout()
         
@@ -294,6 +324,87 @@ class MainWindow(QMainWindow):
     def log(self, message):
         """Add a message to the log"""
         self.log_text.append(message)
+    
+    def load_saved_devices(self):
+        """Load saved devices from JSON file"""
+        if os.path.exists(self.devices_file):
+            try:
+                with open(self.devices_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error loading saved devices: {e}")
+                return {}
+        return {}
+    
+    def save_devices_to_file(self):
+        """Save devices to JSON file"""
+        try:
+            with open(self.devices_file, 'w') as f:
+                json.dump(self.saved_devices, f, indent=2)
+        except Exception as e:
+            print(f"Error saving devices: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to save devices: {e}")
+    
+    def populate_saved_devices(self):
+        """Populate the saved devices dropdown"""
+        self.saved_devices_combo.clear()
+        self.saved_devices_combo.addItem("-- Select a saved device --")
+        for name in sorted(self.saved_devices.keys()):
+            device = self.saved_devices[name]
+            self.saved_devices_combo.addItem(f"{name} ({device['host']}:{device['port']})", name)
+    
+    def on_device_selected(self, index):
+        """Handle device selection from dropdown"""
+        if index > 0:  # Skip the first "Select" item
+            device_name = self.saved_devices_combo.currentData()
+            if device_name and device_name in self.saved_devices:
+                device = self.saved_devices[device_name]
+                self.host_input.setText(device['host'])
+                self.client_port_input.setText(str(device['port']))
+                self.log(f"Selected device: {device_name}")
+    
+    def save_current_device(self):
+        """Save current connection settings as a device"""
+        host = self.host_input.text().strip()
+        port = self.client_port_input.text().strip()
+        
+        if not host or not port:
+            QMessageBox.warning(self, "Invalid Input", "Please enter both host IP and port.")
+            return
+        
+        # Ask for device name
+        name, ok = QInputDialog.getText(self, "Save Device", 
+                                         "Enter a name for this device:",
+                                         text=host)
+        
+        if ok and name:
+            name = name.strip()
+            if name:
+                self.saved_devices[name] = {
+                    'host': host,
+                    'port': int(port) if port.isdigit() else 5555
+                }
+                self.save_devices_to_file()
+                self.populate_saved_devices()
+                self.log(f"Saved device: {name}")
+                QMessageBox.information(self, "Success", f"Device '{name}' saved successfully!")
+    
+    def delete_saved_device(self):
+        """Delete the selected saved device"""
+        index = self.saved_devices_combo.currentIndex()
+        if index > 0:
+            device_name = self.saved_devices_combo.currentData()
+            if device_name and device_name in self.saved_devices:
+                reply = QMessageBox.question(self, "Delete Device",
+                                            f"Are you sure you want to delete '{device_name}'?",
+                                            QMessageBox.Yes | QMessageBox.No)
+                if reply == QMessageBox.Yes:
+                    del self.saved_devices[device_name]
+                    self.save_devices_to_file()
+                    self.populate_saved_devices()
+                    self.log(f"Deleted device: {device_name}")
+        else:
+            QMessageBox.information(self, "No Selection", "Please select a device to delete.")
     
     def start_server(self):
         """Start the server"""
