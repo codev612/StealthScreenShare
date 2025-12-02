@@ -62,6 +62,10 @@ class ScreenShareServer:
         """Wait for a client to connect"""
         client_addr = self.network.accept_connection()
         
+        # If accept_connection returns None, server was stopped
+        if client_addr is None:
+            return None
+        
         # Start receiving remote control events
         self.network.start_receive_thread(self._handle_remote_event)
         
@@ -122,8 +126,7 @@ class ScreenShareServer:
                 try:
                     self.network.send_data(data)
                 except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as conn_err:
-                    print(f"Connection lost: {conn_err}")
-                    print("Client disconnected, stopping stream...")
+                    print(f"Client disconnected (connection closed)")
                     break
                 
                 frame_count += 1
@@ -152,6 +155,9 @@ class ScreenShareServer:
                 traceback.print_exc()
                 break
         
+        # Mark streaming as stopped when loop exits
+        self.streaming = False
+        print("Stream loop ended")
         # Cleanup (let GC handle capturer; __del__ will close resources)
     
     def _handle_remote_event(self, data):
@@ -170,6 +176,13 @@ class ScreenShareServer:
         if self.stream_thread:
             self.stream_thread.join(timeout=2)
         print("Stopped streaming")
+    
+    def cleanup_client(self):
+        """Clean up after client disconnection to prepare for new connection"""
+        self.stop_streaming()
+        # Use network's cleanup method
+        self.network.cleanup_client()
+        print("Cleaned up client connection, ready for new client")
     
     def stop(self):
         """Stop the server"""

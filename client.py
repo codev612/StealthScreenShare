@@ -210,6 +210,10 @@ class ScreenShareClient:
         if self.connected:
             self.network.disconnect()
             self.connected = False
+        # Clear current frame to reset state
+        with self.frame_lock:
+            self.current_frame = None
+        self.on_frame = None
         print("Disconnected")
 
 

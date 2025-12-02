@@ -33,14 +33,35 @@ class ServerThread(QThread):
         try:
             self.server = ScreenShareServer(port=self.port, fps=self.fps, quality=self.quality, target_kb=self.target_kb)
             self.log_signal.emit(f"Server started on port {self.port}")
-            self.log_signal.emit(f"Waiting for connection...")
-            
             self.server.start()
-            self.server.wait_for_client()
             
-            # Keep server running
+            # Keep accepting new client connections
             while self.server.running:
-                threading.Event().wait(1)
+                try:
+                    self.log_signal.emit(f"Waiting for connection...")
+                    client_addr = self.server.wait_for_client()
+                    
+                    # Check if connection was successful
+                    if client_addr is None:
+                        # Server was stopped
+                        break
+                    
+                    self.log_signal.emit("Client connected!")
+                    
+                    # Wait while client is connected (streaming)
+                    while self.server.streaming and self.server.running:
+                        threading.Event().wait(0.5)
+                    
+                    # Client disconnected, clean up for next connection
+                    if self.server.running:
+                        self.log_signal.emit("Client disconnected, ready for new connection")
+                        self.server.cleanup_client()
+                        
+                except Exception as conn_err:
+                    if self.server.running:
+                        self.log_signal.emit(f"Connection error: {conn_err}")
+                        self.server.cleanup_client()
+                        threading.Event().wait(1)  # Brief pause before accepting next connection
                 
         except Exception as e:
             self.log_signal.emit(f"Server error: {e}")
@@ -445,6 +466,11 @@ class MainWindow(QMainWindow):
     
     def start_client(self):
         """Start the client"""
+        # Make sure any previous client is fully stopped
+        if self.client_thread:
+            self.log("Cleaning up previous connection...")
+            self.stop_client()
+        
         try:
             host = self.host_input.text()
             port = int(self.client_port_input.text())
@@ -465,9 +491,32 @@ class MainWindow(QMainWindow):
     def stop_client(self):
         """Stop the client"""
         if self.client_thread:
+            # Disconnect all signals before stopping
+            try:
+                self.client_thread.log_signal.disconnect()
+            except:
+                pass
+            try:
+                self.client_thread.frame_signal.disconnect()
+            except:
+                pass
+            
             self.client_thread.stop()
-            self.client_thread.wait()
+            self.client_thread.wait(3000)  # Wait up to 3 seconds (positional argument)
             self.client_thread = None
+        
+        # Clean up viewer windows
+        if hasattr(self, 'viewer_windows'):
+            for vw in self.viewer_windows:
+                try:
+                    vw.close()
+                except:
+                    pass
+            self.viewer_windows = []
+        
+        # Reset viewer label
+        self.viewer_label.clear()
+        self.viewer_label.setText("No video yet")
         
         self.connect_btn.setEnabled(True)
         self.disconnect_btn.setEnabled(False)
@@ -485,7 +534,7 @@ class MainWindow(QMainWindow):
     def open_large_viewer(self):
         if not hasattr(self, 'viewer_windows'):
             self.viewer_windows = []
-        vw = ViewerWindow(self)
+        vw = ViewerWindow(self, self.client_thread)
         # Reuse existing stream by connecting to the same signal
         if self.client_thread:
             self.client_thread.frame_signal.connect(vw.update_frame)
@@ -494,8 +543,9 @@ class MainWindow(QMainWindow):
 
 
 class ViewerWindow(QMainWindow):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, client_thread=None):
         super().__init__(parent)
+        self.client_thread = client_thread
         self.setWindowTitle("Remote Viewer")
         self.resize(1024, 640)
         central = QWidget()
@@ -530,7 +580,18 @@ class ViewerWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Handle window close event"""
-        # Just close the viewer window, don't stop the server/client
+        # Disconnect from signal if still connected
+        if self.client_thread:
+            try:
+                self.client_thread.frame_signal.disconnect(self.update_frame)
+            except:
+                pass
+        # Remove from parent's viewer_windows list
+        if self.parent() and hasattr(self.parent(), 'viewer_windows'):
+            try:
+                self.parent().viewer_windows.remove(self)
+            except:
+                pass
         event.accept()
 
 

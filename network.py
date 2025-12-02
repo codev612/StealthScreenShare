@@ -23,12 +23,16 @@ class NetworkServer:
         self.server_socket = None
         self.client_socket = None
         self.running = False
+        self.client_running = False
         self.on_data_received = None
+        self.receive_thread = None
         
     def start(self):
         """Start the server and listen for connections"""
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Set timeout so accept() doesn't block forever
+        self.server_socket.settimeout(1.0)
         # Enable keepalive on the listening socket (propagates to accepted sockets on some OSes)
         try:
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
@@ -42,18 +46,31 @@ class NetworkServer:
     def accept_connection(self):
         """Wait for and accept a client connection"""
         print("Waiting for client connection...")
-        self.client_socket, client_address = self.server_socket.accept()
-        # Improve TCP behavior on the client socket
-        try:
-            self.client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        except OSError:
-            pass
-        try:
-            self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        except OSError:
-            pass
-        print(f"Client connected from {client_address}")
-        return client_address
+        while self.running:
+            try:
+                self.client_socket, client_address = self.server_socket.accept()
+                # Improve TCP behavior on the client socket
+                try:
+                    self.client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                except OSError:
+                    pass
+                try:
+                    self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                except OSError:
+                    pass
+                self.client_running = True
+                print(f"Client connected from {client_address}")
+                return client_address
+            except socket.timeout:
+                # Timeout allows us to check if we should keep running
+                continue
+            except OSError as e:
+                if self.running:
+                    print(f"Error accepting connection: {e}")
+                    raise
+                else:
+                    return None
+        return None
     
     def send_data(self, data):
         """
@@ -73,7 +90,7 @@ class NetworkServer:
             # Send actual data
             self.client_socket.sendall(data)
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
-            self.running = False
+            # Don't set running=False here, let the caller handle it
             raise
     
     def receive_data(self):
@@ -123,13 +140,13 @@ class NetworkServer:
             callback: Function to call with received data
         """
         self.on_data_received = callback
-        thread = threading.Thread(target=self._receive_loop, daemon=True)
-        thread.start()
-        return thread
+        self.receive_thread = threading.Thread(target=self._receive_loop, daemon=True)
+        self.receive_thread.start()
+        return self.receive_thread
     
     def _receive_loop(self):
         """Internal loop for receiving data"""
-        while self.running:
+        while self.running and self.client_running:
             try:
                 data = self.receive_data()
                 if data and self.on_data_received:
@@ -137,13 +154,36 @@ class NetworkServer:
                 elif not data:
                     break
             except (ConnectionResetError, ConnectionAbortedError, OSError) as e:
-                if self.running:
-                    print(f"Connection lost: {e}")
+                if self.client_running:
+                    print(f"Client disconnected from receive loop")
                 break
             except Exception as e:
-                if self.running:
+                if self.client_running:
                     print(f"Error receiving data: {e}")
                 break
+    
+    def cleanup_client(self):
+        """Clean up client connection while keeping server running"""
+        self.client_running = False
+        
+        # Wait for receive thread to finish
+        if self.receive_thread and self.receive_thread.is_alive():
+            self.receive_thread.join(timeout=2)
+        self.receive_thread = None
+        
+        # Close client socket
+        if self.client_socket:
+            try:
+                self.client_socket.shutdown(socket.SHUT_RDWR)
+            except (OSError, AttributeError):
+                pass
+            try:
+                self.client_socket.close()
+            except:
+                pass
+            self.client_socket = None
+        
+        self.on_data_received = None
     
     def stop(self):
         """Stop the server"""
@@ -285,7 +325,7 @@ class NetworkClient:
                     break
             except (ConnectionResetError, ConnectionAbortedError, OSError) as e:
                 if self.running:
-                    print(f"Connection lost: {e}")
+                    print(f"Server disconnected")
                 break
             except Exception as e:
                 if self.running:
