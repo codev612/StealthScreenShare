@@ -76,6 +76,7 @@ class ClientThread(QThread):
     """Thread for running the client"""
     log_signal = pyqtSignal(str)
     frame_signal = pyqtSignal(QImage)
+    connection_failed = pyqtSignal()
     
     def __init__(self, host, port=5555):
         super().__init__()
@@ -113,9 +114,15 @@ class ClientThread(QThread):
                 self.log_signal.emit("Connection closed by server")
             
         except (ConnectionResetError, ConnectionAbortedError, OSError) as conn_err:
-            self.log_signal.emit(f"Connection lost: {conn_err}")
+            self.log_signal.emit(f"Connection failed: {conn_err}")
+            self.connection_failed.emit()
+            if self.client:
+                self.client.disconnect()
         except Exception as e:
             self.log_signal.emit(f"Client error: {e}")
+            self.connection_failed.emit()
+            if self.client:
+                self.client.disconnect()
     
     def stop(self):
         """Stop the client"""
@@ -133,6 +140,17 @@ class MainWindow(QMainWindow):
         self.devices_file = os.path.join(os.path.dirname(__file__), 'saved_devices.json')
         self.saved_devices = self.load_saved_devices()
         self.init_ui()
+        # Auto-start hosting server
+        self.auto_start_server()
+        
+    def auto_start_server(self):
+        """Automatically start the hosting server on app launch"""
+        try:
+            # Small delay to ensure UI is ready
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(500, self.start_server)
+        except Exception as e:
+            print(f"Error auto-starting server: {e}")
         
     def init_ui(self):
         """Initialize the user interface"""
@@ -478,6 +496,7 @@ class MainWindow(QMainWindow):
             self.client_thread = ClientThread(host, port)
             self.client_thread.log_signal.connect(self.log)
             self.client_thread.frame_signal.connect(self.update_viewer)
+            self.client_thread.connection_failed.connect(self.on_connection_failed)
             self.client_thread.start()
             
             self.connect_btn.setEnabled(False)
@@ -487,6 +506,11 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.log(f"Error connecting: {e}")
             QMessageBox.critical(self, "Error", f"Failed to connect: {e}")
+    
+    def on_connection_failed(self):
+        """Handle connection failure by auto-disconnecting"""
+        self.log("Auto-disconnecting due to connection failure...")
+        self.stop_client()
     
     def stop_client(self):
         """Stop the client"""
