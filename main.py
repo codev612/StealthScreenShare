@@ -1,5 +1,5 @@
 """
-Main entry point with GUI for ScreenHacker
+Main entry point with GUI for Screener
 """
 import sys
 import json
@@ -7,9 +7,9 @@ import os
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                               QHBoxLayout, QPushButton, QLabel, QLineEdit, 
                               QTextEdit, QTabWidget, QMessageBox, QComboBox, 
-                              QInputDialog)
+                              QInputDialog, QSystemTrayIcon, QMenu, QAction)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QImage, QPixmap
+from PyQt5.QtGui import QFont, QImage, QPixmap, QIcon
 import socket
 import threading
 from server import ScreenShareServer
@@ -140,6 +140,7 @@ class MainWindow(QMainWindow):
         self.devices_file = os.path.join(os.path.dirname(__file__), 'saved_devices.json')
         self.saved_devices = self.load_saved_devices()
         self.init_ui()
+        self.init_tray_icon()
         # Auto-start hosting server
         self.auto_start_server()
         
@@ -151,10 +152,73 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(500, self.start_server)
         except Exception as e:
             print(f"Error auto-starting server: {e}")
+    
+    def init_tray_icon(self):
+        """Initialize system tray icon"""
+        # Create the tray icon
+        self.tray_icon = QSystemTrayIcon(self)
+        
+        # Try to set an icon (using default application icon if available)
+        try:
+            # You can replace this with a custom icon file path
+            self.tray_icon.setIcon(self.style().standardIcon(self.style().SP_ComputerIcon))
+        except:
+            pass
+        
+        # Create tray menu
+        tray_menu = QMenu()
+        
+        show_action = QAction("Show", self)
+        show_action.triggered.connect(self.show_from_tray)
+        tray_menu.addAction(show_action)
+        
+        hide_action = QAction("Hide to Tray", self)
+        hide_action.triggered.connect(self.hide)
+        tray_menu.addAction(hide_action)
+        
+        tray_menu.addSeparator()
+        
+        quit_action = QAction("Quit", self)
+        quit_action.triggered.connect(self.quit_application)
+        tray_menu.addAction(quit_action)
+        
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.setToolTip("Screener - Remote Desktop")
+        
+        # Double-click to show window
+        self.tray_icon.activated.connect(self.tray_icon_activated)
+        
+        # Show the tray icon
+        self.tray_icon.show()
+    
+    def tray_icon_activated(self, reason):
+        """Handle tray icon activation"""
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.show_from_tray()
+    
+    def show_from_tray(self):
+        """Show window from system tray"""
+        self.show()
+        self.activateWindow()
+        self.raise_()
+    
+    def quit_application(self):
+        """Quit the application completely"""
+        # Stop server and client if running
+        if self.server_thread:
+            self.stop_server()
+        if self.client_thread:
+            self.stop_client()
+        
+        # Hide tray icon
+        if hasattr(self, 'tray_icon'):
+            self.tray_icon.hide()
+        
+        QApplication.quit()
         
     def init_ui(self):
         """Initialize the user interface"""
-        self.setWindowTitle("ScreenHacker - Remote Desktop")
+        self.setWindowTitle("Screener - Remote Desktop")
         self.setGeometry(100, 100, 600, 500)
         
         # Central widget
@@ -166,7 +230,7 @@ class MainWindow(QMainWindow):
         central_widget.setLayout(layout)
         
         # Title
-        title = QLabel("ScreenHacker")
+        title = QLabel("Screener")
         title.setFont(QFont("Arial", 24, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
@@ -194,7 +258,7 @@ class MainWindow(QMainWindow):
         self.log_text.setMaximumHeight(150)
         layout.addWidget(self.log_text)
         
-        self.log("Welcome to ScreenHacker!")
+        self.log("Welcome to Screener!")
         self.log(f"Your local IP: {self.get_local_ip()}")
         
     def create_host_tab(self):
@@ -564,6 +628,34 @@ class MainWindow(QMainWindow):
             self.client_thread.frame_signal.connect(vw.update_frame)
         vw.show()
         self.viewer_windows.append(vw)
+    
+    def changeEvent(self, event):
+        """Handle window state changes - minimize to tray"""
+        if event.type() == event.WindowStateChange:
+            if self.isMinimized():
+                event.ignore()
+                self.hide()
+                if hasattr(self, 'tray_icon') and self.tray_icon.isVisible():
+                    self.tray_icon.showMessage(
+                        "Screener",
+                        "Application minimized to tray",
+                        QSystemTrayIcon.Information,
+                        2000
+                    )
+                return
+        super().changeEvent(event)
+    
+    def closeEvent(self, event):
+        """Handle close event - minimize to tray instead of closing"""
+        event.ignore()
+        self.hide()
+        if hasattr(self, 'tray_icon') and self.tray_icon.isVisible():
+            self.tray_icon.showMessage(
+                "Screener",
+                "Application is still running in the background",
+                QSystemTrayIcon.Information,
+                2000
+            )
 
 
 class ViewerWindow(QMainWindow):
@@ -623,7 +715,7 @@ def main():
     """Main entry point"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="ScreenHacker - Remote Desktop Application")
+    parser = argparse.ArgumentParser(description="Screener - Remote Desktop Application")
     parser.add_argument('--host', action='store_true', help='Start in host mode')
     parser.add_argument('--connect', type=str, help='Connect to host IP')
     parser.add_argument('--port', type=int, default=5555, help='Port number')
