@@ -31,7 +31,7 @@ class RemoteController:
                     'dy': int
                 }
         """
-        event_type = event_data.get('type')
+        event_type = event_data.get('type') or event_data.get('event_type')
         
         if event_type == 'move':
             x = event_data.get('x', 0)
@@ -71,7 +71,7 @@ class RemoteController:
                     'is_special': bool
                 }
         """
-        event_type = event_data.get('type')
+        event_type = event_data.get('type') or event_data.get('event_type')
         key_str = event_data.get('key')
         is_special = event_data.get('is_special', False)
         
@@ -112,14 +112,29 @@ class RemoteController:
         """
         try:
             event_data = json.loads(event_json)
-            category = event_data.get('category')
+            print(f"RemoteController executing: {event_data}")  # Debug
+            # Support both 'category' and 'type' for backwards compatibility
+            category = event_data.get('category') or event_data.get('type')
+            print(f"Event category: {category}")  # Debug
             
             if category == 'mouse':
+                # Map event_type to type for execute_mouse_event
+                if 'event_type' in event_data:
+                    event_data['type'] = event_data['event_type']
+                print(f"Executing mouse event: {event_data}")  # Debug
                 self.execute_mouse_event(event_data)
             elif category == 'keyboard':
+                # Map event_type to type for execute_keyboard_event
+                if 'event_type' in event_data:
+                    event_data['type'] = event_data['event_type']
+                print(f"Executing keyboard event: {event_data}")  # Debug
                 self.execute_keyboard_event(event_data)
+            else:
+                print(f"Unknown category: {category}")  # Debug
         except Exception as e:
             print(f"Error executing event: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 class InputCapture:

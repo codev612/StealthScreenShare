@@ -16,23 +16,264 @@ from server import ScreenShareServer
 from client import ScreenShareClient
 
 
+class InteractiveViewer(QLabel):
+    """Interactive viewer that can send mouse and keyboard events"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent_window = parent
+        self.remote_width = 1920  # Default, updated from server
+        self.remote_height = 1080
+        self.control_enabled = False
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setMouseTracking(False)  # Only track when control is enabled
+        
+    def set_remote_size(self, width, height):
+        """Set the remote screen dimensions"""
+        self.remote_width = width
+        self.remote_height = height
+    
+    def enable_control(self, enabled):
+        """Enable or disable remote control"""
+        self.control_enabled = enabled
+        if enabled:
+            self.setStyleSheet("border: 2px solid green; background-color: #000;")
+            self.setCursor(Qt.CrossCursor)
+            self.setMouseTracking(True)
+        else:
+            self.setStyleSheet("background-color: #000; color: #ccc; font-size: 16px;")
+            self.setCursor(Qt.ArrowCursor)
+            self.setMouseTracking(False)
+    
+    def map_to_remote(self, local_x, local_y):
+        """Map local coordinates to remote screen coordinates"""
+        if not self.pixmap():
+            return 0, 0
+        
+        # Get the displayed pixmap size
+        pixmap = self.pixmap()
+        pixmap_rect = pixmap.rect()
+        
+        # Calculate the position of the pixmap within the label (centered)
+        label_rect = self.rect()
+        x_offset = (label_rect.width() - pixmap_rect.width()) / 2
+        y_offset = (label_rect.height() - pixmap_rect.height()) / 2
+        
+        # Adjust for offset
+        adjusted_x = local_x - x_offset
+        adjusted_y = local_y - y_offset
+        
+        # Map to remote coordinates
+        if pixmap_rect.width() > 0 and pixmap_rect.height() > 0:
+            remote_x = int((adjusted_x / pixmap_rect.width()) * self.remote_width)
+            remote_y = int((adjusted_y / pixmap_rect.height()) * self.remote_height)
+            return remote_x, remote_y
+        
+        return 0, 0
+    
+    def send_control_event(self, event_dict):
+        """Send control event to server"""
+        if not self.control_enabled:
+            return
+            
+        if self.parent_window and self.parent_window.client_thread:
+            client = self.parent_window.client_thread.client
+            if client and client.connected:
+                try:
+                    import json
+                    event_json = json.dumps(event_dict)
+                    print(f"Sending control event: {event_json}")  # Debug
+                    client.send_control_event(event_json)
+                except Exception as e:
+                    print(f"Error sending control event: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"Client not connected: client={client}, connected={client.connected if client else 'N/A'}")
+        else:
+            print(f"No client thread: parent={self.parent_window}, thread={self.parent_window.client_thread if self.parent_window else 'N/A'}")
+    
+    def mouseMoveEvent(self, event):
+        """Handle mouse move events"""
+        if not self.control_enabled:
+            super().mouseMoveEvent(event)
+            return
+            
+        remote_x, remote_y = self.map_to_remote(event.x(), event.y())
+        self.send_control_event({
+            'type': 'mouse',
+            'event_type': 'move',
+            'x': remote_x,
+            'y': remote_y
+        })
+        super().mouseMoveEvent(event)
+    
+    def mousePressEvent(self, event):
+        """Handle mouse press events"""
+        if not self.control_enabled:
+            super().mousePressEvent(event)
+            return
+            
+        remote_x, remote_y = self.map_to_remote(event.x(), event.y())
+        button_map = {
+            Qt.LeftButton: 'left',
+            Qt.RightButton: 'right',
+            Qt.MiddleButton: 'middle'
+        }
+        button = button_map.get(event.button(), 'left')
+        self.send_control_event({
+            'type': 'mouse',
+            'event_type': 'click',
+            'x': remote_x,
+            'y': remote_y,
+            'button': button,
+            'pressed': True
+        })
+        super().mousePressEvent(event)
+    
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release events"""
+        if not self.control_enabled:
+            super().mouseReleaseEvent(event)
+            return
+            
+        remote_x, remote_y = self.map_to_remote(event.x(), event.y())
+        button_map = {
+            Qt.LeftButton: 'left',
+            Qt.RightButton: 'right',
+            Qt.MiddleButton: 'middle'
+        }
+        button = button_map.get(event.button(), 'left')
+        self.send_control_event({
+            'type': 'mouse',
+            'event_type': 'click',
+            'x': remote_x,
+            'y': remote_y,
+            'button': button,
+            'pressed': False
+        })
+        super().mouseReleaseEvent(event)
+    
+    def wheelEvent(self, event):
+        """Handle mouse wheel events"""
+        if not self.control_enabled:
+            super().wheelEvent(event)
+            return
+            
+        delta = event.angleDelta().y() / 120  # Standard wheel step
+        self.send_control_event({
+            'type': 'mouse',
+            'event_type': 'scroll',
+            'dx': 0,
+            'dy': int(delta)
+        })
+        super().wheelEvent(event)
+    
+    def keyPressEvent(self, event):
+        """Handle key press events"""
+        if not self.control_enabled:
+            super().keyPressEvent(event)
+            return
+            
+        key_text = event.text()
+        key = event.key()
+        
+        # Special keys mapping
+        special_keys = {
+            Qt.Key_Return: 'enter',
+            Qt.Key_Enter: 'enter',
+            Qt.Key_Tab: 'tab',
+            Qt.Key_Space: 'space',
+            Qt.Key_Backspace: 'backspace',
+            Qt.Key_Delete: 'delete',
+            Qt.Key_Escape: 'esc',
+            Qt.Key_Control: 'ctrl',
+            Qt.Key_Shift: 'shift',
+            Qt.Key_Alt: 'alt',
+            Qt.Key_Up: 'up',
+            Qt.Key_Down: 'down',
+            Qt.Key_Left: 'left',
+            Qt.Key_Right: 'right',
+        }
+        
+        if key in special_keys:
+            self.send_control_event({
+                'type': 'keyboard',
+                'event_type': 'press',
+                'key': special_keys[key],
+                'is_special': True
+            })
+        elif key_text:
+            self.send_control_event({
+                'type': 'keyboard',
+                'event_type': 'press',
+                'key': key_text,
+                'is_special': False
+            })
+        super().keyPressEvent(event)
+    
+    def keyReleaseEvent(self, event):
+        """Handle key release events"""
+        if not self.control_enabled:
+            super().keyReleaseEvent(event)
+            return
+            
+        key_text = event.text()
+        key = event.key()
+        
+        special_keys = {
+            Qt.Key_Return: 'enter',
+            Qt.Key_Enter: 'enter',
+            Qt.Key_Tab: 'tab',
+            Qt.Key_Space: 'space',
+            Qt.Key_Backspace: 'backspace',
+            Qt.Key_Delete: 'delete',
+            Qt.Key_Escape: 'esc',
+            Qt.Key_Control: 'ctrl',
+            Qt.Key_Shift: 'shift',
+            Qt.Key_Alt: 'alt',
+            Qt.Key_Up: 'up',
+            Qt.Key_Down: 'down',
+            Qt.Key_Left: 'left',
+            Qt.Key_Right: 'right',
+        }
+        
+        if key in special_keys:
+            self.send_control_event({
+                'type': 'keyboard',
+                'event_type': 'release',
+                'key': special_keys[key],
+                'is_special': True
+            })
+        elif key_text:
+            self.send_control_event({
+                'type': 'keyboard',
+                'event_type': 'release',
+                'key': key_text,
+                'is_special': False
+            })
+        super().keyReleaseEvent(event)
+
+
 class ServerThread(QThread):
     """Thread for running the server"""
     log_signal = pyqtSignal(str)
     
-    def __init__(self, port=5555, fps=30, quality=90, target_kb=200):
+    def __init__(self, port=5555, fps=30, quality=90, target_kb=200, monitor=1):
         super().__init__()
         self.port = port
         self.fps = fps
         self.quality = quality
         self.target_kb = target_kb
+        self.monitor = monitor
         self.server = None
         
     def run(self):
         """Run the server"""
         try:
-            self.server = ScreenShareServer(port=self.port, fps=self.fps, quality=self.quality, target_kb=self.target_kb)
+            self.server = ScreenShareServer(port=self.port, fps=self.fps, quality=self.quality, target_kb=self.target_kb, monitor=self.monitor)
             self.log_signal.emit(f"Server started on port {self.port}")
+            self.log_signal.emit(f"Capturing monitor {self.monitor}")
             self.server.start()
             
             # Keep accepting new client connections
@@ -250,6 +491,17 @@ class MainWindow(QMainWindow):
         host_group.setFont(QFont("Arial", 12, QFont.Bold))
         left_layout.addWidget(host_group)
         
+        # Monitor selection
+        monitor_layout = QHBoxLayout()
+        monitor_layout.addWidget(QLabel("Monitor:"))
+        self.monitor_combo = QComboBox()
+        self.populate_monitors()
+        self.monitor_combo.setMaximumWidth(150)
+        self.monitor_combo.currentIndexChanged.connect(self.on_monitor_changed)
+        monitor_layout.addWidget(self.monitor_combo)
+        monitor_layout.addStretch()
+        left_layout.addLayout(monitor_layout)
+        
         # Server settings
         server_settings = QHBoxLayout()
         server_settings.addWidget(QLabel("Port:"))
@@ -361,11 +613,21 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
         
         # Viewer area - takes all available space
-        self.viewer_label = QLabel("Remote Screen\n\nConnect to view remote desktop")
+        self.viewer_label = InteractiveViewer(self)
+        self.viewer_label.setText("Remote Screen\n\nConnect to view remote desktop")
         self.viewer_label.setAlignment(Qt.AlignCenter)
         self.viewer_label.setStyleSheet("background-color: #000; color: #ccc; font-size: 16px;")
         self.viewer_label.setMinimumSize(600, 400)
         right_layout.addWidget(self.viewer_label)
+        
+        # Control toggle button
+        control_layout = QHBoxLayout()
+        self.control_toggle_btn = QPushButton("🎮 Enable Remote Control (Click to activate)")
+        self.control_toggle_btn.clicked.connect(self.toggle_remote_control)
+        self.control_toggle_btn.setEnabled(False)
+        self.control_toggle_btn.setStyleSheet("padding: 8px; font-weight: bold;")
+        control_layout.addWidget(self.control_toggle_btn)
+        right_layout.addLayout(control_layout)
         
         content_layout.addWidget(right_panel, stretch=1)
         
@@ -391,6 +653,33 @@ class MainWindow(QMainWindow):
     def log(self, message):
         """Add a message to the log"""
         self.log_text.append(message)
+    
+    def populate_monitors(self):
+        """Populate the monitor selection dropdown"""
+        try:
+            import mss
+            with mss.mss() as sct:
+                monitors = sct.monitors
+                self.monitor_combo.clear()
+                # Skip index 0 (all monitors combined)
+                for i in range(1, len(monitors)):
+                    mon = monitors[i]
+                    self.monitor_combo.addItem(
+                        f"Monitor {i}: {mon['width']}x{mon['height']}",
+                        i
+                    )
+        except Exception as e:
+            print(f"Error listing monitors: {e}")
+            self.monitor_combo.addItem("Monitor 1 (Primary)", 1)
+    
+    def on_monitor_changed(self, index):
+        """Handle monitor selection change"""
+        if self.server_thread and self.server_thread.isRunning():
+            monitor = self.monitor_combo.currentData() or 1
+            self.log(f"Switching to Monitor {monitor}...")
+            # Change monitor on the running server
+            if hasattr(self.server_thread, 'server') and self.server_thread.server:
+                self.server_thread.server.change_monitor(monitor)
     
     def load_saved_devices(self):
         """Load saved devices from JSON file"""
@@ -480,8 +769,9 @@ class MainWindow(QMainWindow):
             fps = int(self.fps_input.text())
             quality = int(self.quality_input.text())
             target_kb = int(self.targetkb_input.text())
+            monitor = self.monitor_combo.currentData() or 1
             
-            self.server_thread = ServerThread(port, fps, quality, target_kb)
+            self.server_thread = ServerThread(port, fps, quality, target_kb, monitor)
             self.server_thread.log_signal.connect(self.log)
             self.server_thread.start()
             
@@ -531,6 +821,10 @@ class MainWindow(QMainWindow):
             self.disconnect_btn.setEnabled(True)
             self.open_viewer_btn.setEnabled(True)
             
+            # Enable control button after a short delay to ensure connection is stable
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(1500, lambda: self.control_toggle_btn.setEnabled(True))
+            
         except Exception as e:
             self.log(f"Error connecting: {e}")
             QMessageBox.critical(self, "Error", f"Failed to connect: {e}")
@@ -569,10 +863,12 @@ class MainWindow(QMainWindow):
         # Reset viewer label
         self.viewer_label.clear()
         self.viewer_label.setText("No video yet")
+        self.viewer_label.enable_control(False)
         
         self.connect_btn.setEnabled(True)
         self.disconnect_btn.setEnabled(False)
         self.open_viewer_btn.setEnabled(False)
+        self.control_toggle_btn.setEnabled(False)
         self.log("Disconnected from remote")
 
     def update_viewer(self, qimg: QImage):
@@ -581,6 +877,36 @@ class MainWindow(QMainWindow):
         pix = QPixmap.fromImage(qimg)
         scaled = pix.scaled(self.viewer_label.width(), self.viewer_label.height(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.viewer_label.setPixmap(scaled)
+        
+        # Update remote screen size if not set
+        if self.viewer_label.remote_width == 1920 and qimg.width() > 0:
+            self.viewer_label.set_remote_size(qimg.width(), qimg.height())
+    
+    def toggle_remote_control(self):
+        """Toggle remote control on/off"""
+        if not self.client_thread or not self.client_thread.client:
+            self.log("Error: Not connected to remote")
+            QMessageBox.warning(self, "Not Connected", "Please connect to a remote computer first.")
+            return
+        
+        if not self.client_thread.client.connected:
+            self.log("Error: Connection not established")
+            QMessageBox.warning(self, "Connection Error", "Connection not fully established. Please wait.")
+            return
+            
+        current_state = self.viewer_label.control_enabled
+        new_state = not current_state
+        self.viewer_label.enable_control(new_state)
+        
+        if new_state:
+            self.control_toggle_btn.setText("🎮 Remote Control: ON (Green border)")
+            self.control_toggle_btn.setStyleSheet("padding: 8px; font-weight: bold; background-color: #4CAF50; color: white;")
+            self.log("Remote control ENABLED - Click on screen to control")
+            self.viewer_label.setFocus()
+        else:
+            self.control_toggle_btn.setText("🎮 Enable Remote Control (Click to activate)")
+            self.control_toggle_btn.setStyleSheet("padding: 8px; font-weight: bold;")
+            self.log("Remote control DISABLED")
 
     # ---- Large Viewer ----
     def open_large_viewer(self):

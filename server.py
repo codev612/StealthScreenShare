@@ -13,7 +13,7 @@ import pickle
 class ScreenShareServer:
     """Server that shares the screen and accepts remote control"""
     
-    def __init__(self, host='0.0.0.0', port=5555, fps=30, quality=90, target_kb=200):
+    def __init__(self, host='0.0.0.0', port=5555, fps=30, quality=90, target_kb=200, monitor=1):
         """
         Initialize screen share server
         
@@ -23,11 +23,13 @@ class ScreenShareServer:
             fps: Target frames per second
             quality: Compression quality (0-100)
             target_kb: Target compressed frame size in KB for adaptive compressor
+            monitor: Monitor number to capture (1 for primary)
         """
         self.host = host
         self.port = port
         self.fps = fps
         self.frame_delay = 1.0 / fps
+        self.monitor = monitor
         
         # Delay ScreenCapture creation to the streaming thread to avoid
         # mss thread-local handle issues on Windows
@@ -43,6 +45,13 @@ class ScreenShareServer:
         self.running = False
         self.streaming = False
         self.stream_thread = None
+    
+    def change_monitor(self, monitor_number):
+        """Change the monitor being captured"""
+        self.monitor = monitor_number
+        if self.screen_capture:
+            print(f"Changing to monitor {monitor_number}")
+            self.screen_capture.set_monitor(monitor_number)
         
     def start(self):
         """Start the server"""
@@ -94,7 +103,7 @@ class ScreenShareServer:
         # Create ScreenCapture inside this thread to avoid mss thread-local errors
         capturer = None
         try:
-            capturer = ScreenCapture()
+            capturer = ScreenCapture(monitor_number=self.monitor)
             # Send screen size to client from this thread
             screen_size = capturer.get_screen_size()
             self.network.send_data(pickle.dumps({
@@ -164,11 +173,15 @@ class ScreenShareServer:
         """Handle incoming remote control events"""
         try:
             event = pickle.loads(data)
+            print(f"Server received event: {event}")  # Debug
             if event.get('type') == 'control':
                 event_json = event.get('data')
+                print(f"Executing control event: {event_json}")  # Debug
                 self.remote_controller.execute_event(event_json)
         except Exception as e:
             print(f"Error handling remote event: {e}")
+            import traceback
+            traceback.print_exc()
     
     def stop_streaming(self):
         """Stop streaming frames"""
